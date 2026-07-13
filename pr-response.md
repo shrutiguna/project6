@@ -1,7 +1,14 @@
 # PR Response Doc — CineLog Watchlist Feature
 
 ## AI Usage
-<!-- Fill in at the end — how you used AI tools during this project -->
+I used Claude (Claude Code) throughout this project, primarily for orientation and hygiene rather than for the design decisions themselves:
+
+- **Codebase orientation:** Before touching any review comment, I had it summarize `models.py`, `services/collection_service.py`, and `tests/test_collection.py` — what each function does, the `verb_to_noun` naming convention, and the fixture/assertion pattern used across tests. This is what made it obvious that Comment 1's rename should follow `add_to_collection()`'s pattern, and that Comment 2's deduplication should follow `add_to_collection()`'s check-then-raise-then-insert structure, rather than inventing a new approach.
+- **Rebase debugging:** After `git rebase origin/main` reported success with no conflicts, I used it to help trace through *why* `get_watchlist()` started raising `AttributeError: 'WatchlistEntry' object has no attribute 'film'` once the new sort-order test ran. That surfaced the real problem: main's UUID refactor commit had silently dropped the entire `WatchlistEntry` class from `models.py` (since the watchlist feature hadn't merged into main yet), and none of my commits' diffs touched that class directly, so git's line-based merge never flagged it as a conflict. Without that investigation I might have assumed the rebase completed cleanly, when in fact it produced a `models.py` that would break the whole feature at runtime.
+- **Stress-testing Comment 4 and Comment 5:** After drafting my own position on both (public=True default, date-added sort order), I asked it to argue the counterposition as a careful reviewer would. For Comment 4, it pushed back that "matching an existing bad pattern (CollectionEntry having no privacy control at all) isn't necessarily a good reason to repeat it for a new feature" — which is a fair point, and I addressed it directly in my Tradeoff section rather than ignoring it: I acknowledge that a `public=False` default is the safer, more privacy-conscious choice in isolation, and only prefer `public=True` because of the specific inconsistency it would create against `CollectionEntry`'s existing unconditional visibility. For Comment 5, it noted that "most users want to see recent additions" doesn't automatically mean date-added should be the *only* view — a real product might want both — but since Comment 5 only asks for a single default sort order for `get_watchlist()`, I kept my response focused on defending that one choice rather than scope-creeping into a multi-sort feature that wasn't requested.
+- **Commit hygiene:** Before finalizing, I ran `git log --oneline` past it and asked whether every message matched conventional commit format and whether any commit bundled unrelated changes. It flagged that my original watchlist rename and dedup work were fine as separate commits, but the very first commit inherited from the starter repo ("added watchlist model and endpoint fixed a bug more changes") was not conventional — I used `git rebase -i` to reword it to `feat: add watchlist service and endpoint`.
+
+In every case, the final reasoning in Comments 4 and 5 is my own — grounded in specifics from this codebase (the absence of a visibility field on `CollectionEntry`, the existing `date_added.desc()` convention in `get_collection()`) that a generic AI answer wouldn't have surfaced without being pointed at the actual files.
 
 ## Comment 1 — Rename
 **What I did:** Renamed `save_to_watchlist()` to `add_to_watchlist()` in `services/watchlist_service.py` to match the project's `verb_to_noun` naming convention used elsewhere (e.g. `add_to_collection()`, `remove_from_collection()` in `services/collection_service.py`). Also updated the docstring's first line from "Save a film..." to "Add a film..." so the docs stay consistent with the new name.
@@ -44,17 +51,62 @@ Practically, `public=True` also supports the core value CineLog is building towa
 ## Stretch Features
 
 ### remove_from_watchlist()
-**What I did:**
+**What I did:** Added `remove_from_watchlist(user_id, film_id)` to `services/watchlist_service.py`, following the exact pattern of `remove_from_collection()` in `services/collection_service.py`: it looks up the `WatchlistEntry` by `(user_id, film_id)`, and if none exists it raises a new `NotInWatchlistError` (mirroring `NotInCollectionError`) rather than silently no-op'ing — this matches the project's convention of raising a specific, named exception for every "this operation doesn't make sense" case instead of returning `None`/`False` ambiguously. If the entry exists, it's deleted and the function returns `True`, again matching `remove_from_collection()`'s return contract. I also wired up a `DELETE /watchlist/<user_id>/remove` route in `routes/watchlist/watchlist.py`, copying the error-to-status-code mapping used by `routes/collection.py`'s equivalent endpoint (`NotInWatchlistError` → 404). Added two tests: `test_remove_from_watchlist_deletes_entry` (happy path) and `test_remove_from_watchlist_not_present_raises` (the "isn't on the watchlist" case), both modeled on the collection service's test structure.
 
 ### Second test
-**What I did:**
+**What I did:** Added `test_get_watchlist_empty_for_new_user`, which asserts `get_watchlist()` returns `[]` for a user who has never added anything. I chose this edge case because it's the actual first-run state every real user starts in — before Comments 1–3 were addressed, nothing in the test suite touched `get_watchlist()` at all, and the sort-order test I added for Comment 5 only ever exercises it with existing entries. An empty-list case is easy to get wrong in subtly different ways (returning `None`, raising on an empty query, or a `.join(Film)` silently excluding a user with zero entries) — asserting the exact `== []` return value pins down the expected "nothing here yet" behavior explicitly rather than leaving it implicit.
 
 ### Visibility toggle endpoint
-**What I did:**
+**What I did:** Added a `public` parameter to `add_to_watchlist(user_id, film_id, public=True)`, which is passed straight through to the new `WatchlistEntry(..., public=public)`. The default stays `True`, consistent with the Comment 4 decision above — this isn't a change in default behavior, just an explicit way for callers to opt a specific entry into `public=False` without needing a separate update call. Updated the `POST /watchlist/<user_id>/add` route to accept an optional `"public"` key in the JSON body (`data.get("public", True)`), so a caller can send `{"film_id": "...", "public": false}` to add a private entry directly. Added `test_add_to_watchlist_defaults_to_public` and `test_add_to_watchlist_respects_explicit_public_false` to cover both the default and the override.
 
 ## Commit History
 
-<!-- git log --oneline screenshot goes here -->
+`git log --oneline origin/main..HEAD` (branch commits, newest first — linear history, no merge commits):
+
+```
+447c186 docs: document stretch feature implementations
+42293f7 feat: add public parameter to add_to_watchlist for explicit visibility control
+2462849 test: add edge case for get_watchlist on an empty watchlist
+cc0fd3b feat: add remove_from_watchlist with test coverage
+ce5a353 docs: document rebase and UUID conflict resolution
+0c31add fix: update watchlist model and code to UUID film IDs after main refactor
+b5f4b86 docs: document rename, dedup, test, and design decision responses
+5edbb04 fix: sort watchlist by date added, newest first
+cee5b25 fix: add missing Film-WatchlistEntry relationship for get_watchlist
+1d90bf3 test: add test for nonexistent film_id in add_to_watchlist
+069e929 fix: add deduplication check to prevent duplicate watchlist entries
+4a6b664 fix: rename save_to_watchlist to add_to_watchlist per naming convention
+34af857 fix: update film retrieval method to use db.session.get in collection and watchlist services
+322b7d2 feat: add watchlist service and endpoint
+```
 
 ## PR Description
-<!-- Written at the end — feature overview, design decisions, manual testing steps -->
+
+### What this feature does
+This PR adds the watchlist feature to CineLog: users can save films they intend to watch (as opposed to `collection`, which tracks films already watched). It adds:
+
+- `POST /watchlist/<user_id>/add` — add a film to a user's watchlist. Body: `{"film_id": "<uuid>", "public": true}` (`public` is optional, defaults to `true`). Returns 404 if the film doesn't exist, 409 if it's already on the watchlist.
+- `GET /watchlist/<user_id>` — return a user's watchlist, sorted by date added (newest first).
+- `DELETE /watchlist/<user_id>/remove` — remove a film from a user's watchlist. Body: `{"film_id": "<uuid>"}`. Returns 404 if the film isn't on the watchlist.
+
+### Design decisions
+- **Default visibility (`public=True`):** New watchlist entries default to public. `CollectionEntry` (watched films) has no privacy control at all in this codebase — it's implicitly, unconditionally public — so defaulting the new `WatchlistEntry.public` field to `True` keeps the watchlist consistent with how every other entity in the app already behaves, rather than introducing an inconsistent, surprising privacy model for just one feature. Callers who want a private entry can pass `public=False` explicitly. Full reasoning and the tradeoff acknowledged in Comment 4 above.
+- **Sort order (date-added, newest first):** `get_watchlist()` sorts by `date_added` descending. This matches `get_collection()`'s existing sort order exactly, and better serves what a watchlist is actually for — surfacing what a user most recently decided they want to watch, rather than burying it alphabetically. Full reasoning in Comment 5 above.
+
+### How to manually test
+1. Set up the environment and run the app:
+   ```
+   python -m venv .venv
+   source .venv/Scripts/activate   # or .venv/bin/activate on macOS/Linux
+   pip install -r requirements.txt
+   python app.py
+   ```
+2. Run the automated test suite: `pytest tests/ -v` — expect 13 passed.
+3. Manually exercise the endpoints with curl (replace `<user_id>` / `<film_id>` with real UUIDs from your database, e.g. via `GET /films`):
+   - Add a film to the watchlist: `curl -X POST http://127.0.0.1:5000/watchlist/<user_id>/add -H "Content-Type: application/json" -d '{"film_id": "<film_id>"}'` — expect `201` with the new entry, `"public": true`.
+   - Add the same film again: expect `409` with an "already on this user's watchlist" error.
+   - Add a film with an unknown UUID: expect `404` with a "no film found" error.
+   - Add a second film explicitly private: `curl -X POST .../add -d '{"film_id": "<film_id_2>", "public": false}'` — expect `"public": false` in the response.
+   - View the watchlist: `curl http://127.0.0.1:5000/watchlist/<user_id>` — expect the films returned with the most recently added one first.
+   - Remove a film: `curl -X DELETE http://127.0.0.1:5000/watchlist/<user_id>/remove -H "Content-Type: application/json" -d '{"film_id": "<film_id>"}'` — expect `200`, then re-run the GET and confirm it's gone.
+   - Remove a film that isn't on the watchlist: expect `404`.
