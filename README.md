@@ -79,14 +79,3 @@ pytest tests/
 
 ---
 
-## Your Task
-
-You're working on the `feature/watchlist` branch, which adds a watchlist feature to CineLog. A maintainer (`@dev-lead`) has reviewed your PR and left six comments. Your job is to address all six.
-
-Read `CONTRIBUTING.md` before touching any code. Then check out the `feature/watchlist` branch:
-
-```bash
-git checkout feature/watchlist
-```
-
-The open PR and the maintainer's review comments are filed on GitHub. Work through each comment and document your responses in your **PR Response Doc**.
