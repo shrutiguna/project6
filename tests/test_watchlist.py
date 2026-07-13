@@ -163,3 +163,13 @@ def test_get_watchlist_returns_newest_first(app, sample_user):
         # so newest-first order should put it first.
         assert titles[0] == "Blade Runner"
         assert titles[1] == "Alien"
+
+
+def test_get_watchlist_empty_for_new_user(app, sample_user):
+    """
+    get_watchlist() should return an empty list (not raise or return None)
+    for a user who hasn't added anything yet — the endpoint's default,
+    pre-any-action state.
+    """
+    with app.app_context():
+        assert get_watchlist(sample_user) == []
