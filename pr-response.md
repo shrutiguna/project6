@@ -1,7 +1,6 @@
 # PR Response Doc — CineLog Watchlist Feature
 
 ## AI Usage
-I used Claude (Claude Code) throughout this project, primarily for orientation and hygiene rather than for the design decisions themselves:
 
 - **Codebase orientation:** Before touching any review comment, I had it summarize `models.py`, `services/collection_service.py`, and `tests/test_collection.py` — what each function does, the `verb_to_noun` naming convention, and the fixture/assertion pattern used across tests. This is what made it obvious that Comment 1's rename should follow `add_to_collection()`'s pattern, and that Comment 2's deduplication should follow `add_to_collection()`'s check-then-raise-then-insert structure, rather than inventing a new approach.
 - **Rebase debugging:** After `git rebase origin/main` reported success with no conflicts, I used it to help trace through *why* `get_watchlist()` started raising `AttributeError: 'WatchlistEntry' object has no attribute 'film'` once the new sort-order test ran. That surfaced the real problem: main's UUID refactor commit had silently dropped the entire `WatchlistEntry` class from `models.py` (since the watchlist feature hadn't merged into main yet), and none of my commits' diffs touched that class directly, so git's line-based merge never flagged it as a conflict. Without that investigation I might have assumed the rebase completed cleanly, when in fact it produced a `models.py` that would break the whole feature at runtime.
