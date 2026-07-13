@@ -107,6 +107,27 @@ def test_add_to_watchlist_nonexistent_film_raises(app, sample_user):
             add_to_watchlist(user_id=sample_user, film_id=fake_film_id)
 
 
+# ── Visibility toggle ────────────────────────────────────────────────────────
+
+def test_add_to_watchlist_defaults_to_public(app, sample_user, sample_film):
+    """
+    add_to_watchlist() should default new entries to public=True
+    (see Comment 4 in pr-response.md).
+    """
+    with app.app_context():
+        entry = add_to_watchlist(user_id=sample_user, film_id=sample_film)
+        assert entry.public is True
+
+
+def test_add_to_watchlist_respects_explicit_public_false(app, sample_user, sample_film):
+    """
+    Callers can override the default and add a private watchlist entry.
+    """
+    with app.app_context():
+        entry = add_to_watchlist(user_id=sample_user, film_id=sample_film, public=False)
+        assert entry.public is False
+
+
 # ── Removal ──────────────────────────────────────────────────────────────────
 
 def test_remove_from_watchlist_deletes_entry(app, sample_user, sample_film):
